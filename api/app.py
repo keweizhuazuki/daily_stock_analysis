@@ -223,6 +223,50 @@ def _load_runtime_scheduler_args() -> dict:
     return parsed
 
 
+def _start_mcp_sse_if_enabled(app: FastAPI) -> Optional[asyncio.Task]:
+    """Start the MCP SSE server as a background task when enabled.
+
+    Only activates when ``MCP_SERVER_ENABLED=true`` **and**
+    ``MCP_SERVER_TRANSPORT`` is ``"sse"`` (stdio co-hosting is not supported).
+    """
+    from src.config import Config
+
+    config = Config.get_instance()
+    if not config.mcp_server_enabled:
+        return None
+    if config.mcp_server_transport != "sse":
+        logger.info(
+            "MCP server transport is '%s' — SSE co-hosting only supports 'sse', skipping.",
+            config.mcp_server_transport,
+        )
+        return None
+
+    try:
+        from mcp_server.server import create_server
+    except ImportError:
+        logger.warning("MCP server enabled but 'mcp' package is not installed. Skipping.")
+        return None
+
+    mcp_instance = create_server()
+
+    async def _run_mcp_sse() -> None:
+        logger.info(
+            "Starting MCP SSE server on %s:%s",
+            config.mcp_server_host,
+            config.mcp_server_port,
+        )
+        try:
+            mcp_instance.run(
+                transport="sse",
+                host=config.mcp_server_host,
+                port=config.mcp_server_port,
+            )
+        except Exception:
+            logger.error("MCP SSE server crashed", exc_info=True)
+
+    return asyncio.create_task(_run_mcp_sse())
+
+
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     """Initialize and release shared services for the app lifecycle."""
@@ -278,9 +322,19 @@ async def app_lifespan(app: FastAPI):
         runtime_scheduler=app.state.runtime_scheduler_service,
     )
     _schedule_stock_index_background_refresh(app, "startup")
+
+    # Start MCP SSE server as a background task when enabled
+    mcp_task = _start_mcp_sse_if_enabled(app)
+
     try:
         yield
     finally:
+        # Cancel MCP server task
+        if mcp_task is not None and not mcp_task.done():
+            mcp_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await mcp_task
+
         refresh_task = getattr(app.state, "stock_index_refresh_task", None)
         if refresh_task is not None and not refresh_task.done():
             refresh_task.cancel()

@@ -1019,6 +1019,12 @@ class Config:
     # 交易日检查：默认启用，非交易日跳过执行；设为 false 或 --force-run 可强制执行（Issue #373）
     trading_day_check_enabled: bool = True
 
+    # === MCP Server 配置 ===
+    mcp_server_enabled: bool = False           # 是否启用 MCP Server
+    mcp_server_transport: str = "stdio"        # MCP 传输模式：stdio 或 sse
+    mcp_server_host: str = "127.0.0.1"         # SSE 模式监听地址
+    mcp_server_port: int = 8080                # SSE 模式监听端口
+
     # === 实时行情增强数据配置 ===
     # 实时行情开关（关闭后使用历史收盘价进行分析）
     enable_realtime_quote: bool = True
@@ -1953,6 +1959,11 @@ class Config:
             dingtalk_app_key=os.getenv('DINGTALK_APP_KEY'),
             dingtalk_app_secret=os.getenv('DINGTALK_APP_SECRET'),
             dingtalk_stream_enabled=os.getenv('DINGTALK_STREAM_ENABLED', 'false').lower() == 'true',
+            # MCP Server
+            mcp_server_enabled=os.getenv('MCP_SERVER_ENABLED', 'false').lower() == 'true',
+            mcp_server_transport=os.getenv('MCP_SERVER_TRANSPORT', 'stdio'),
+            mcp_server_host=os.getenv('MCP_SERVER_HOST', '127.0.0.1'),
+            mcp_server_port=parse_env_int(os.getenv('MCP_SERVER_PORT'), 8080, field_name='MCP_SERVER_PORT', minimum=1),
             # 企业微信机器人
             wecom_corpid=os.getenv('WECOM_CORPID'),
             wecom_token=os.getenv('WECOM_TOKEN'),
